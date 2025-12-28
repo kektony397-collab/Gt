@@ -4,7 +4,7 @@ import { db } from '../db';
 import { Product } from '../types';
 import { 
   Search, FileSpreadsheet, Plus, Trash2, Edit3, 
-  Download, Filter, ArrowUpDown, Loader2, CheckCircle2 
+  Filter, Loader2, CheckCircle2, X 
 } from 'lucide-react';
 import { useApp } from '../App';
 import { readExcelFile, normalizeData } from '../utils/importEngine';
@@ -14,26 +14,32 @@ const Inventory: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [importing, setImporting] = useState({ active: false, progress: 0, total: 0 });
-  const [sortField, setSortField] = useState<keyof Product>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newProduct, setNewProduct] = useState<Partial<Product>>({
+    name: '', manufacturer: '', batch: '', expiry: '', hsn: '', gstRate: 12, mrp: 0, purchaseRate: 0, saleRate: 0, stock: 10
+  });
 
   const fetchProducts = useCallback(async () => {
     let result: Product[];
-    if (searchTerm) {
+    // Prevent UI hanging by using limit and efficient searching
+    if (searchTerm.trim().length > 1) {
       result = await db.products
-        .where('name')
-        .startsWithIgnoreCase(searchTerm)
-        .or('batch')
-        .startsWithIgnoreCase(searchTerm)
+        .filter(p => 
+          p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          p.batch.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .limit(50)
         .toArray();
     } else {
-      result = await db.products.orderBy(sortField).limit(100).toArray();
-      if (sortOrder === 'desc') result.reverse();
+      result = await db.products.orderBy('name').limit(50).toArray();
     }
     setProducts(result);
-  }, [searchTerm, sortField, sortOrder]);
+  }, [searchTerm]);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => {
+    const timer = setTimeout(() => fetchProducts(), 300); // Debounce
+    return () => clearTimeout(timer);
+  }, [fetchProducts]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,25 +51,39 @@ const Inventory: React.FC = () => {
       
       setImporting({ active: true, progress: 0, total: normalized.length });
 
-      // Chunked Ingestion for 1 Billion conceptual records (handles massive IndexedDB sets)
       const chunkSize = 500;
       for (let i = 0; i < normalized.length; i += chunkSize) {
         const chunk = normalized.slice(i, i + chunkSize);
         await db.products.bulkAdd(chunk);
-        
-        // Ensure UI updates smoothly
         setImporting(prev => ({ ...prev, progress: Math.min(i + chunkSize, normalized.length) }));
-        // Small delay to allow progress bar animation to breathe
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 10)); // Yield to UI thread
       }
 
       fetchProducts();
       setTimeout(() => setImporting({ active: false, progress: 0, total: 0 }), 1000);
     } catch (err) {
       console.error(err);
-      alert('Import failed. Please check your Excel format.');
+      alert('Import failed. Data set might contain duplicates or errors.');
       setImporting({ active: false, progress: 0, total: 0 });
     }
+  };
+
+  const handleAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await db.products.add(newProduct as Product);
+      setIsModalOpen(false);
+      setNewProduct({ name: '', manufacturer: '', batch: '', expiry: '', hsn: '', gstRate: 12, mrp: 0, purchaseRate: 0, saleRate: 0, stock: 10 });
+      fetchProducts();
+    } catch (err) {
+      alert('Error adding product. Please ensure all fields are correct.');
+    }
+  };
+
+  const deleteProduct = async (id?: number) => {
+    if (!id || !confirm('Remove this product?')) return;
+    await db.products.delete(id);
+    fetchProducts();
   };
 
   return (
@@ -90,15 +110,59 @@ const Inventory: React.FC = () => {
                 {Math.round((importing.progress / importing.total) * 100)}%
               </div>
             </div>
-            <h3 className="text-2xl font-black tracking-tight mb-2">Ingesting Data Engine</h3>
+            <h3 className="text-2xl font-black tracking-tight mb-2">Power Import Engine</h3>
             <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">
               {importing.progress.toLocaleString()} / {importing.total.toLocaleString()} Records
             </p>
-            {importing.progress === importing.total && (
-              <div className="mt-6 flex items-center justify-center gap-2 text-emerald-500 font-black animate-bounce">
-                <CheckCircle2 size={20} /> Optimization Complete
+          </div>
+        </div>
+      )}
+
+      {/* Manual Add Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-black tracking-tight">Add New Medicine</h3>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="col-span-full">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Medicine Name</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} />
               </div>
-            )}
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Manufacturer</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.manufacturer} onChange={e => setNewProduct({...newProduct, manufacturer: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Batch Number</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.batch} onChange={e => setNewProduct({...newProduct, batch: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Expiry (MM/YY)</label>
+                  <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" placeholder="04/26" value={newProduct.expiry} onChange={e => setNewProduct({...newProduct, expiry: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">HSN Code</label>
+                  <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.hsn} onChange={e => setNewProduct({...newProduct, hsn: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">MRP</label>
+                  <input required type="number" step="0.01" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.mrp} onChange={e => setNewProduct({...newProduct, mrp: parseFloat(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Stock</label>
+                  <input required type="number" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value)})} />
+                </div>
+              </div>
+              <div className="col-span-full pt-4">
+                <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-3xl font-black shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all">SAVE PRODUCT</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -106,20 +170,18 @@ const Inventory: React.FC = () => {
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h2 className="text-4xl font-black tracking-tighter">Live Inventory</h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Auto-mapping Excel data to Gopi ERP Schema.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Auto-mapping Excel data. Displaying optimized view of {products.length} records.</p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl cursor-pointer hover:scale-105 transition-all active:scale-95 font-black text-sm text-emerald-600">
+          <label className="flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl cursor-pointer hover:scale-105 transition-all font-black text-sm text-emerald-600">
             <FileSpreadsheet size={20} />
             POWER IMPORT
             <input type="file" className="hidden" onChange={handleImport} accept=".xlsx,.xls,.csv" />
           </label>
-          {!isMobile && (
-            <button className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-3xl shadow-2xl shadow-blue-500/30 font-black text-sm active:scale-95 transition-all">
-              <Plus size={20} />
-              NEW SKU
-            </button>
-          )}
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-3xl shadow-2xl shadow-blue-500/30 font-black text-sm active:scale-95 transition-all">
+            <Plus size={20} />
+            NEW SKU
+          </button>
         </div>
       </header>
 
@@ -128,7 +190,7 @@ const Inventory: React.FC = () => {
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={20} />
           <input 
             type="text" 
-            placeholder="Search SKUs, HSN, Manufacturers..." 
+            placeholder="Quick filter (Name or Batch)..." 
             className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-black"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -174,16 +236,16 @@ const Inventory: React.FC = () => {
                   <td className="p-6">
                     <div className="flex items-center justify-center gap-1">
                       <button className="p-3 text-slate-300 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"><Edit3 size={18}/></button>
-                      <button className="p-3 text-slate-300 hover:text-rose-500 rounded-xl hover:bg-rose-50 transition-all"><Trash2 size={18}/></button>
+                      <button onClick={() => deleteProduct(p.id)} className="p-3 text-slate-300 hover:text-rose-500 rounded-xl hover:bg-rose-50 transition-all"><Trash2 size={18}/></button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {products.length === 0 && (
+              {products.length === 0 && !searchTerm && (
                 <tr>
                   <td colSpan={5} className="p-20 text-center">
                     <Loader2 size={40} className="mx-auto mb-4 text-slate-200 animate-spin" />
-                    <p className="text-slate-400 font-bold tracking-tight uppercase text-xs">Awaiting Data Ingestion...</p>
+                    <p className="text-slate-400 font-bold tracking-tight uppercase text-xs">Waiting for SKU entry...</p>
                   </td>
                 </tr>
               )}

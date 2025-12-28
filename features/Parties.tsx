@@ -4,7 +4,7 @@ import { db } from '../db';
 import { Party } from '../types';
 import { 
   Users, Search, Plus, MapPin, Phone, ShieldCheck, 
-  Trash2, FileSpreadsheet, CheckCircle2, Loader2 
+  Trash2, FileSpreadsheet, Loader2, X 
 } from 'lucide-react';
 import { readExcelFile, normalizeData } from '../utils/importEngine';
 
@@ -12,23 +12,28 @@ const Parties: React.FC = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [importing, setImporting] = useState({ active: false, progress: 0, total: 0 });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newParty, setNewParty] = useState<Partial<Party>>({
+    name: '', gstin: '', address: '', phone: '', email: '', stateCode: '24', dl1: '', dl2: '', type: 'WHOLESALE', pricingTier: 'WHOLESALE', creditLimit: 0, currentBalance: 0
+  });
 
   const fetchParties = useCallback(async () => {
     let result: Party[];
-    if (searchTerm) {
+    if (searchTerm.trim().length > 1) {
       result = await db.parties
-        .where('name')
-        .startsWithIgnoreCase(searchTerm)
-        .or('gstin')
-        .startsWithIgnoreCase(searchTerm)
+        .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.gstin.toLowerCase().includes(searchTerm.toLowerCase()))
+        .limit(50)
         .toArray();
     } else {
-      result = await db.parties.toArray();
+      result = await db.parties.orderBy('name').limit(50).toArray();
     }
     setParties(result);
   }, [searchTerm]);
 
-  useEffect(() => { fetchParties(); }, [fetchParties]);
+  useEffect(() => {
+    const timer = setTimeout(() => fetchParties(), 300);
+    return () => clearTimeout(timer);
+  }, [fetchParties]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,12 +60,22 @@ const Parties: React.FC = () => {
     }
   };
 
-  const deleteParty = async (id?: number) => {
-    if (!id) return;
-    if (confirm('Permanently remove this ledger?')) {
-      await db.parties.delete(id);
+  const handleAddParty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await db.parties.add(newParty as Party);
+      setIsModalOpen(false);
+      setNewParty({ name: '', gstin: '', address: '', phone: '', email: '', stateCode: '24', dl1: '', dl2: '', type: 'WHOLESALE', pricingTier: 'WHOLESALE', creditLimit: 0, currentBalance: 0 });
       fetchParties();
+    } catch (err) {
+      alert('Error adding party ledger.');
     }
+  };
+
+  const deleteParty = async (id?: number) => {
+    if (!id || !confirm('Permanently remove this ledger?')) return;
+    await db.parties.delete(id);
+    fetchParties();
   };
 
   return (
@@ -86,10 +101,51 @@ const Parties: React.FC = () => {
         </div>
       )}
 
+      {/* Manual Party Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-black tracking-tight">Create New Ledger</h3>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleAddParty} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="col-span-full">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Firm Name</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.name} onChange={e => setNewParty({...newParty, name: e.target.value})} />
+              </div>
+              <div className="col-span-full">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Address</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.address} onChange={e => setNewParty({...newParty, address: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">GSTIN</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.gstin} onChange={e => setNewParty({...newParty, gstin: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Phone</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.phone} onChange={e => setNewParty({...newParty, phone: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">DL 20B</label>
+                <input type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.dl1} onChange={e => setNewParty({...newParty, dl1: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">DL 21B</label>
+                <input type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500" value={newParty.dl2} onChange={e => setNewParty({...newParty, dl2: e.target.value})} />
+              </div>
+              <div className="col-span-full pt-4">
+                <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-3xl font-black shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all">SAVE LEDGER</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-4xl font-black tracking-tighter">Client Registry</h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Auto-Ledger synchronization with fuzzy mapping.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Auto-Ledger synchronization with fuzzy mapping. Showing optimized view.</p>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl cursor-pointer hover:scale-105 transition-all font-black text-sm text-indigo-600">
@@ -97,7 +153,7 @@ const Parties: React.FC = () => {
             LEDGER IMPORT
             <input type="file" className="hidden" onChange={handleImport} accept=".xlsx,.xls,.csv" />
           </label>
-          <button className="bg-blue-600 text-white px-10 py-4 rounded-3xl shadow-2xl shadow-blue-500/30 font-black text-sm active:scale-95 transition-all flex items-center gap-2">
+          <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-10 py-4 rounded-3xl shadow-2xl shadow-blue-500/30 font-black text-sm active:scale-95 transition-all flex items-center gap-2">
             <Plus size={20} />
             ADD PARTY
           </button>
@@ -109,7 +165,7 @@ const Parties: React.FC = () => {
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
           <input 
             type="text" 
-            placeholder="Search by Firm Name, GSTIN, or DL No..."
+            placeholder="Search by Firm Name or GSTIN..."
             className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus:ring-2 focus:ring-blue-500/20 outline-none font-black text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

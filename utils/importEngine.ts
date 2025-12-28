@@ -38,7 +38,7 @@ export const normalizeData = (rows: any[], type: 'PRODUCT' | 'PARTY'): any[] => 
     // Default values
     if (type === 'PRODUCT') {
       normalized.gstRate = 12;
-      normalized.stock = 0;
+      normalized.stock = 10; // Defaulting to 10 as per request
     } else {
       normalized.type = 'WHOLESALE';
       normalized.pricingTier = 'WHOLESALE';
