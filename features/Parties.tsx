@@ -3,22 +3,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../db';
 import { Party } from '../types';
 import { 
-  Users, 
-  Search, 
-  Plus, 
-  Building2, 
-  Phone, 
-  Mail, 
-  ShieldCheck, 
-  MoreVertical,
-  MapPin,
-  Trash2
+  Users, Search, Plus, MapPin, Phone, ShieldCheck, 
+  Trash2, FileSpreadsheet, CheckCircle2, Loader2 
 } from 'lucide-react';
+import { readExcelFile, normalizeData } from '../utils/importEngine';
 
 const Parties: React.FC = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [importing, setImporting] = useState({ active: false, progress: 0, total: 0 });
 
   const fetchParties = useCallback(async () => {
     let result: Party[];
@@ -35,33 +28,36 @@ const Parties: React.FC = () => {
     setParties(result);
   }, [searchTerm]);
 
-  useEffect(() => {
-    fetchParties();
-  }, [fetchParties]);
+  useEffect(() => { fetchParties(); }, [fetchParties]);
 
-  const addDummyParty = async () => {
-    // Fixed: Added missing pricingTier, creditLimit, and currentBalance properties to match the Party interface
-    const dummy: Party = {
-      name: 'Sunrise Pharmacy',
-      gstin: '07BBBBB1234B1Z5',
-      address: 'Main Market, Sector 15, Rohini, Delhi',
-      phone: '9988776655',
-      email: 'sunrise@gmail.com',
-      stateCode: '07',
-      dl1: '20B-9988/24',
-      dl2: '21B-4455/24',
-      type: 'WHOLESALE',
-      pricingTier: 'WHOLESALE',
-      creditLimit: 100000,
-      currentBalance: 0
-    };
-    await db.parties.add(dummy);
-    fetchParties();
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = await readExcelFile(file);
+      const normalized = normalizeData(rows, 'PARTY');
+      setImporting({ active: true, progress: 0, total: normalized.length });
+
+      const chunkSize = 500;
+      for (let i = 0; i < normalized.length; i += chunkSize) {
+        await db.parties.bulkAdd(normalized.slice(i, i + chunkSize));
+        setImporting(prev => ({ ...prev, progress: Math.min(i + chunkSize, normalized.length) }));
+        await new Promise(r => setTimeout(r, 10));
+      }
+
+      fetchParties();
+      setTimeout(() => setImporting({ active: false, progress: 0, total: 0 }), 1000);
+    } catch (err) {
+      console.error(err);
+      alert('Import failed.');
+      setImporting({ active: false, progress: 0, total: 0 });
+    }
   };
 
   const deleteParty = async (id?: number) => {
     if (!id) return;
-    if (confirm('Delete this party?')) {
+    if (confirm('Permanently remove this ledger?')) {
       await db.parties.delete(id);
       fetchParties();
     }
@@ -69,104 +65,113 @@ const Parties: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Progress Overlay */}
+      {importing.active && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md p-10 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 text-center">
+             <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
+                <Loader2 className="animate-spin" size={32} />
+             </div>
+             <h3 className="text-2xl font-black tracking-tight mb-2">Syncing Client Base</h3>
+             <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-6 mb-2">
+                <div 
+                  className="h-full bg-blue-600 transition-all duration-300"
+                  style={{ width: `${(importing.progress / importing.total) * 100}%` }}
+                ></div>
+             </div>
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+               {importing.progress} of {importing.total} Entities
+             </p>
+          </div>
+        </div>
+      )}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Party Management</h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Manage Wholesale (B2B) and Retail (B2C) clients.</p>
+          <h2 className="text-4xl font-black tracking-tighter">Client Registry</h2>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Auto-Ledger synchronization with fuzzy mapping.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={addDummyParty}
-            className="bg-slate-100 dark:bg-slate-800 px-6 py-3 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-sm font-semibold"
-          >
-            Import Excel
-          </button>
-          <button 
-            className="bg-blue-600 text-white px-8 py-3 rounded-3xl shadow-lg shadow-blue-200 dark:shadow-none hover:bg-blue-700 transition-all flex items-center gap-2 font-bold"
-          >
+          <label className="flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl cursor-pointer hover:scale-105 transition-all font-black text-sm text-indigo-600">
+            <FileSpreadsheet size={20} />
+            LEDGER IMPORT
+            <input type="file" className="hidden" onChange={handleImport} accept=".xlsx,.xls,.csv" />
+          </label>
+          <button className="bg-blue-600 text-white px-10 py-4 rounded-3xl shadow-2xl shadow-blue-500/30 font-black text-sm active:scale-95 transition-all flex items-center gap-2">
             <Plus size={20} />
-            New Party
+            ADD PARTY
           </button>
         </div>
       </header>
 
-      {/* Search Bar */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-4xl border border-slate-200 dark:border-slate-700 flex items-center gap-4 shadow-sm">
-        <div className="relative flex-1 group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
+      <div className="bg-white dark:bg-slate-800 p-4 rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="relative group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={20} />
           <input 
             type="text" 
-            placeholder="Search by Party Name, GSTIN, or DL Number..."
-            className="w-full pl-12 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-3xl focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Search by Firm Name, GSTIN, or DL No..."
+            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus:ring-2 focus:ring-blue-500/20 outline-none font-black text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
       </div>
 
-      {/* Grid of Parties */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {parties.length === 0 ? (
-          <div className="col-span-full py-20 text-center">
-            <Users size={64} className="mx-auto mb-4 opacity-10" />
-            <p className="text-xl font-medium text-slate-400">Your party list is empty.</p>
+          <div className="col-span-full py-32 text-center opacity-20">
+            <Users size={80} className="mx-auto mb-6" />
+            <p className="text-2xl font-black tracking-tight">NO CLIENTS FOUND</p>
           </div>
         ) : parties.map((party) => (
-          <div key={party.id} className="bg-white dark:bg-slate-800 glass p-8 rounded-4xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all duration-300">
-            <div className="absolute top-0 right-0 p-4">
-              <button onClick={() => deleteParty(party.id)} className="p-2 hover:bg-rose-50 rounded-xl text-rose-400 hover:text-rose-600 transition-all">
+          <div key={party.id} className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl group hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 relative overflow-hidden">
+            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button onClick={() => deleteParty(party.id)} className="p-3 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-100">
                 <Trash2 size={18} />
               </button>
             </div>
             
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg">
+            <div className="flex items-center gap-5 mb-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-3xl flex items-center justify-center text-white font-black text-2xl shadow-lg">
                 {party.name.charAt(0)}
               </div>
               <div>
-                <h4 className="text-xl font-bold line-clamp-1">{party.name}</h4>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase ${party.type === 'WHOLESALE' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'}`}>
+                <h4 className="text-xl font-black tracking-tight leading-none mb-2">{party.name}</h4>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-lg">
                     {party.type}
                   </span>
-                  <span className="text-xs text-slate-400 font-medium">#{party.id}</span>
+                  <span className="text-[10px] font-bold text-slate-400">ID: #{party.id}</span>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4 mb-8">
-              <div className="flex items-start gap-3">
-                <ShieldCheck size={18} className="text-blue-500 mt-1 shrink-0" />
+            <div className="space-y-5">
+              <div className="flex items-start gap-4">
+                <ShieldCheck size={20} className="text-blue-500 mt-1 shrink-0" />
                 <div>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">GSTIN</p>
-                  <p className="text-sm font-semibold">{party.gstin}</p>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Tax Identity</p>
+                  <p className="text-sm font-black text-slate-700 dark:text-slate-300">{party.gstin || 'UNREGISTERED'}</p>
                 </div>
               </div>
-              <div className="flex items-start gap-3">
-                <MapPin size={18} className="text-blue-500 mt-1 shrink-0" />
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2">{party.address}</p>
+              <div className="flex items-start gap-4">
+                <MapPin size={20} className="text-blue-500 mt-1 shrink-0" />
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 line-clamp-2">{party.address}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="flex items-start gap-2">
-                   <Phone size={14} className="text-slate-400 mt-1" />
-                   <span className="text-sm font-medium">{party.phone}</span>
-                 </div>
-                 <div className="flex items-start gap-2">
-                   <Building2 size={14} className="text-slate-400 mt-1" />
-                   <span className="text-sm font-medium">State: {party.stateCode}</span>
-                 </div>
+              <div className="flex items-center gap-4">
+                <Phone size={18} className="text-slate-400" />
+                <span className="text-sm font-black">{party.phone || 'NO CONTACT'}</span>
               </div>
             </div>
 
-            <div className="pt-6 border-t border-slate-100 dark:border-slate-700 flex justify-between gap-4">
-              <div className="text-center flex-1">
-                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">DL 20B</p>
-                <p className="text-xs font-semibold">{party.dl1}</p>
+            <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-4 text-center">
+              <div>
+                <p className="text-[9px] text-slate-400 font-black uppercase mb-1">DL 20B</p>
+                <p className="text-xs font-black">{party.dl1 || '-'}</p>
               </div>
-              <div className="w-[1px] h-8 bg-slate-100 dark:bg-slate-700"></div>
-              <div className="text-center flex-1">
-                <p className="text-[10px] text-slate-400 font-bold uppercase mb-1">DL 21B</p>
-                <p className="text-xs font-semibold">{party.dl2}</p>
+              <div className="border-l border-slate-100 dark:border-slate-800">
+                <p className="text-[9px] text-slate-400 font-black uppercase mb-1">DL 21B</p>
+                <p className="text-xs font-black">{party.dl2 || '-'}</p>
               </div>
             </div>
           </div>
