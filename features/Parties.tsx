@@ -19,15 +19,20 @@ const Parties: React.FC = () => {
 
   const fetchParties = useCallback(async () => {
     let result: Party[];
-    if (searchTerm.trim().length > 1) {
-      result = await db.parties
-        .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.gstin.toLowerCase().includes(searchTerm.toLowerCase()))
-        .limit(50)
-        .toArray();
-    } else {
-      result = await db.parties.orderBy('name').limit(50).toArray();
+    try {
+      if (searchTerm.trim().length > 1) {
+        result = await db.parties
+          .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || (p.gstin || '').toLowerCase().includes(searchTerm.toLowerCase()))
+          .limit(50)
+          .toArray();
+      } else {
+        result = await db.parties.orderBy('name').limit(50).toArray();
+      }
+      setParties(result || []);
+    } catch (err) {
+      console.error("Party fetch failed:", err);
+      setParties([]);
     }
-    setParties(result);
   }, [searchTerm]);
 
   useEffect(() => {
@@ -91,7 +96,7 @@ const Parties: React.FC = () => {
              <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-6 mb-2">
                 <div 
                   className="h-full bg-blue-600 transition-all duration-300"
-                  style={{ width: `${(importing.progress / importing.total) * 100}%` }}
+                  style={{ width: `${(importing.progress / (importing.total || 1)) * 100}%` }}
                 ></div>
              </div>
              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -180,7 +185,7 @@ const Parties: React.FC = () => {
             <p className="text-2xl font-black tracking-tight">NO CLIENTS FOUND</p>
           </div>
         ) : parties.map((party) => (
-          <div key={party.id} className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl group hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 relative overflow-hidden">
+          <div key={party.id || Math.random()} className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-200 dark:border-slate-800 shadow-xl group hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 relative overflow-hidden">
             <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onClick={() => deleteParty(party.id)} className="p-3 bg-rose-50 text-rose-500 rounded-2xl hover:bg-rose-100">
                 <Trash2 size={18} />
@@ -189,15 +194,15 @@ const Parties: React.FC = () => {
             
             <div className="flex items-center gap-5 mb-8">
               <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-3xl flex items-center justify-center text-white font-black text-2xl shadow-lg">
-                {party.name.charAt(0)}
+                {(party.name || '?').charAt(0)}
               </div>
               <div>
-                <h4 className="text-xl font-black tracking-tight leading-none mb-2">{party.name}</h4>
+                <h4 className="text-xl font-black tracking-tight leading-none mb-2">{party.name || 'Untitled Party'}</h4>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase rounded-lg">
-                    {party.type}
+                    {party.type || 'RETAIL'}
                   </span>
-                  <span className="text-[10px] font-bold text-slate-400">ID: #{party.id}</span>
+                  <span className="text-[10px] font-bold text-slate-400">ID: #{party.id || '-'}</span>
                 </div>
               </div>
             </div>
@@ -212,7 +217,7 @@ const Parties: React.FC = () => {
               </div>
               <div className="flex items-start gap-4">
                 <MapPin size={20} className="text-blue-500 mt-1 shrink-0" />
-                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 line-clamp-2">{party.address}</p>
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400 line-clamp-2">{party.address || 'No Address Provided'}</p>
               </div>
               <div className="flex items-center gap-4">
                 <Phone size={18} className="text-slate-400" />

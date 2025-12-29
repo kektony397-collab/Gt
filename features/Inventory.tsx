@@ -27,6 +27,8 @@ const Inventory: React.FC = () => {
   const performSearch = useCallback(async (val: string) => {
     setIsSearching(true);
     try {
+      if (!db.products) throw new Error("Database table not initialized");
+      
       // High-speed multi-field search engine
       const results = await smartSearch(
         db.products,
@@ -34,9 +36,10 @@ const Inventory: React.FC = () => {
         ['name', 'batch', 'manufacturer', 'hsn'],
         100
       );
-      setProducts(results as Product[]);
+      setProducts((results || []) as Product[]);
     } catch (err) {
       console.error("Search engine fault:", err);
+      setProducts([]);
     } finally {
       setIsSearching(false);
     }
@@ -108,7 +111,7 @@ const Inventory: React.FC = () => {
             <div className="w-full h-4 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-2">
               <div 
                 className="h-full bg-blue-600 transition-all duration-300 shadow-[0_0_20px_rgba(37,99,235,0.5)]" 
-                style={{ width: `${(importing.progress / importing.total) * 100}%` }}
+                style={{ width: `${(importing.progress / (importing.total || 1)) * 100}%` }}
               />
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
@@ -146,7 +149,7 @@ const Inventory: React.FC = () => {
                 </div>
                 <div>
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Stock</label>
-                  <input required type="number" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value)})} />
+                  <input required type="number" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} />
                 </div>
               </div>
               <div className="col-span-full pt-4">
@@ -209,21 +212,21 @@ const Inventory: React.FC = () => {
               {products.map((p) => (
                 <tr key={p.id} className="hover:bg-blue-50/40 dark:hover:bg-blue-900/5 transition-colors group">
                   <td className="p-6">
-                    <p className="font-black text-base text-slate-900 dark:text-white leading-tight">{p.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1.5 tracking-wider">{p.manufacturer} • HSN {p.hsn}</p>
+                    <p className="font-black text-base text-slate-900 dark:text-white leading-tight">{p.name || 'Untitled SKU'}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1.5 tracking-wider">{(p.manufacturer || 'Unknown Manufacturer')} • HSN {(p.hsn || 'N/A')}</p>
                   </td>
                   <td className="p-6">
-                    <p className="text-xs font-black text-slate-700 dark:text-slate-300">B: {p.batch}</p>
-                    <p className="text-[10px] font-black text-rose-500 mt-1 uppercase">E {p.expiry}</p>
+                    <p className="text-xs font-black text-slate-700 dark:text-slate-300">B: {p.batch || '-'}</p>
+                    <p className="text-[10px] font-black text-rose-500 mt-1 uppercase">E {p.expiry || '-'}</p>
                   </td>
                   <td className="p-6 text-center">
-                    <span className={`px-5 py-2 rounded-2xl font-black text-sm border-2 ${p.stock < 15 ? 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20'}`}>
-                      {p.stock}
+                    <span className={`px-5 py-2 rounded-2xl font-black text-sm border-2 ${(p.stock || 0) < 15 ? 'bg-rose-50 text-rose-600 border-rose-100 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-900/20'}`}>
+                      {p.stock ?? 0}
                     </span>
                   </td>
                   <td className="p-6 text-right">
-                    <p className="text-base font-black text-slate-900 dark:text-white">₹{p.saleRate.toFixed(2)}</p>
-                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">MRP ₹{p.mrp}</p>
+                    <p className="text-base font-black text-slate-900 dark:text-white">₹{(p.saleRate || 0).toFixed(2)}</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">MRP ₹{(p.mrp || 0).toFixed(2)}</p>
                   </td>
                   <td className="p-6">
                     <div className="flex items-center justify-center gap-1">
