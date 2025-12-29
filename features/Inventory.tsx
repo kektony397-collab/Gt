@@ -30,7 +30,7 @@ const Inventory: React.FC = () => {
   const performSearch = useCallback(async (val: string) => {
     setIsSearching(true);
     try {
-      if (!db.products) throw new Error("Database table not initialized");
+      if (!db || !db.products) throw new Error("Database table not initialized");
       
       const results = await smartSearch(
         db.products,
@@ -113,6 +113,7 @@ const Inventory: React.FC = () => {
   };
 
   const openEditModal = (product: Product) => {
+    // Defensive copy to avoid mutating state directly
     setEditingProduct({ ...product });
     setIsEditModalOpen(true);
   };
@@ -140,10 +141,10 @@ const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* Manual Add Modal */}
+      {/* Add SKU Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 glass">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-2xl font-black tracking-tight">Add New SKU</h3>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
@@ -189,10 +190,10 @@ const Inventory: React.FC = () => {
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Edit SKU Modal */}
       {isEditModalOpen && editingProduct && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 glass">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-2xl font-black tracking-tight">Edit SKU Details</h3>
               <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
@@ -231,7 +232,7 @@ const Inventory: React.FC = () => {
                 </div>
               </div>
               <div className="col-span-full pt-4">
-                <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-3xl font-black shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all">UPDATE REGISTRY</button>
+                <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-3xl font-black shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all uppercase tracking-widest">UPDATE REGISTRY</button>
               </div>
             </form>
           </div>
@@ -241,7 +242,7 @@ const Inventory: React.FC = () => {
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h2 className="text-4xl font-black tracking-tighter">Live Inventory</h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Power Search: 1M+ Records indexed & ready.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Power Search: High-performance IndexedDB engine ready.</p>
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 px-8 py-4 bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl cursor-pointer hover:scale-105 transition-all font-black text-sm text-emerald-600">
@@ -263,8 +264,8 @@ const Inventory: React.FC = () => {
           </div>
           <input 
             type="text" 
-            placeholder="Smart Keyword Search (e.g. 'Abbott Paracet 500')..." 
-            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-black"
+            placeholder="Search SKUs by Name, Batch, or Manufacturer..." 
+            className="w-full pl-14 pr-6 py-4 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/20 text-sm font-black transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -283,11 +284,11 @@ const Inventory: React.FC = () => {
                 <th className="p-6 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Batch / Exp</th>
                 <th className="p-6 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">In-Stock</th>
                 <th className="p-6 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">Wholesale Rate</th>
-                <th className="p-6 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Ops</th>
+                <th className="p-6 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {products.map((p) => (
+              {(products || []).map((p) => (
                 <tr key={p.id} className="hover:bg-blue-50/40 dark:hover:bg-blue-900/5 transition-colors group">
                   <td className="p-6">
                     <p className="font-black text-base text-slate-900 dark:text-white leading-tight">{p.name || 'Untitled SKU'}</p>
@@ -307,14 +308,14 @@ const Inventory: React.FC = () => {
                     <p className="text-[10px] font-bold text-slate-400 mt-0.5">MRP ₹{(p.mrp || 0).toFixed(2)}</p>
                   </td>
                   <td className="p-6">
-                    <div className="flex items-center justify-center gap-1">
-                      <button onClick={() => openEditModal(p)} className="p-3 text-slate-300 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"><Edit3 size={18}/></button>
-                      <button onClick={() => deleteProduct(p.id)} className="p-3 text-slate-300 hover:text-rose-500 rounded-xl hover:bg-rose-50 transition-all"><Trash2 size={18}/></button>
+                    <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => openEditModal(p)} className="p-3 text-slate-400 hover:text-blue-600 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"><Edit3 size={18}/></button>
+                      <button onClick={() => deleteProduct(p.id)} className="p-3 text-slate-400 hover:text-rose-500 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all"><Trash2 size={18}/></button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {products.length === 0 && !isSearching && (
+              {(!products || products.length === 0) && !isSearching && (
                 <tr>
                   <td colSpan={5} className="p-32 text-center">
                     <div className="opacity-10 grayscale mb-6"><Zap size={80} className="mx-auto" /></div>

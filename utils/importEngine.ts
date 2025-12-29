@@ -38,7 +38,7 @@ export const normalizeData = (rows: any[], type: 'PRODUCT' | 'PARTY'): any[] => 
     // Initial Default values
     if (type === 'PRODUCT') {
       normalized.gstRate = 12;
-      normalized.stock = 10; // Forced Defaulting to 10
+      normalized.stock = 10; // Forced strict default to 10
       normalized.purchaseRate = 0;
       normalized.saleRate = 0;
       normalized.mrp = 0;
@@ -53,13 +53,22 @@ export const normalizeData = (rows: any[], type: 'PRODUCT' | 'PARTY'): any[] => 
       const sourceKey = keys.find(k => 
         synonyms.includes(k.toLowerCase().trim().replace(/[^a-z0-9]/g, ''))
       );
+      
       if (sourceKey) {
         let val = row[sourceKey];
-        // Special handling for numeric fields to ensure they don't break logic
+        
+        // Special handling for numeric fields
         if (['gstRate', 'mrp', 'purchaseRate', 'saleRate', 'stock'].includes(targetKey)) {
-          val = parseFloat(val) || (targetKey === 'stock' ? 10 : 0);
+          const parsed = parseFloat(val);
+          if (!isNaN(parsed)) {
+            normalized[targetKey] = parsed;
+          } else {
+            // Keep default if NaN, or use 0 if not stock
+            normalized[targetKey] = targetKey === 'stock' ? 10 : 0;
+          }
+        } else {
+          normalized[targetKey] = val;
         }
-        normalized[targetKey] = val;
       }
     });
 
