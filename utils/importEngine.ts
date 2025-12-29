@@ -35,10 +35,13 @@ export const normalizeData = (rows: any[], type: 'PRODUCT' | 'PARTY'): any[] => 
     const normalized: any = {};
     const keys = Object.keys(row);
 
-    // Default values
+    // Initial Default values
     if (type === 'PRODUCT') {
       normalized.gstRate = 12;
-      normalized.stock = 10; // Defaulting to 10 as per request
+      normalized.stock = 10; // Forced Defaulting to 10
+      normalized.purchaseRate = 0;
+      normalized.saleRate = 0;
+      normalized.mrp = 0;
     } else {
       normalized.type = 'WHOLESALE';
       normalized.pricingTier = 'WHOLESALE';
@@ -51,7 +54,12 @@ export const normalizeData = (rows: any[], type: 'PRODUCT' | 'PARTY'): any[] => 
         synonyms.includes(k.toLowerCase().trim().replace(/[^a-z0-9]/g, ''))
       );
       if (sourceKey) {
-        normalized[targetKey] = row[sourceKey];
+        let val = row[sourceKey];
+        // Special handling for numeric fields to ensure they don't break logic
+        if (['gstRate', 'mrp', 'purchaseRate', 'saleRate', 'stock'].includes(targetKey)) {
+          val = parseFloat(val) || (targetKey === 'stock' ? 10 : 0);
+        }
+        normalized[targetKey] = val;
       }
     });
 

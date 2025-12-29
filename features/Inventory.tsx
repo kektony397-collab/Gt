@@ -16,12 +16,15 @@ const Inventory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [importing, setImporting] = useState({ active: false, progress: 0, total: 0 });
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
   const [newProduct, setNewProduct] = useState<Partial<Product>>({
     name: '', manufacturer: '', batch: '', expiry: '', hsn: '', gstRate: 12, mrp: 0, purchaseRate: 0, saleRate: 0, stock: 10
   });
 
-  // Fix: Replaced NodeJS.Timeout with any for browser compatibility
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
   const searchTimeout = useRef<any>(null);
 
   const performSearch = useCallback(async (val: string) => {
@@ -29,7 +32,6 @@ const Inventory: React.FC = () => {
     try {
       if (!db.products) throw new Error("Database table not initialized");
       
-      // High-speed multi-field search engine
       const results = await smartSearch(
         db.products,
         val,
@@ -47,8 +49,6 @@ const Inventory: React.FC = () => {
 
   useEffect(() => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    
-    // Faster debounce for "Smart Search" feel (200ms)
     searchTimeout.current = setTimeout(() => {
       performSearch(searchTerm);
     }, 200);
@@ -65,17 +65,18 @@ const Inventory: React.FC = () => {
       const rawRows = await readExcelFile(file);
       const normalized = normalizeData(rawRows, 'PRODUCT');
       setImporting({ active: true, progress: 0, total: normalized.length });
-      const chunkSize = 1000; // Increased chunk size for faster processing
+      
+      const chunkSize = 1000;
       for (let i = 0; i < normalized.length; i += chunkSize) {
         await db.products.bulkAdd(normalized.slice(i, i + chunkSize));
         setImporting(prev => ({ ...prev, progress: Math.min(i + chunkSize, normalized.length) }));
-        await new Promise(r => setTimeout(r, 0)); // Minimum yield
+        await new Promise(r => setTimeout(r, 0));
       }
       performSearch(searchTerm);
       setTimeout(() => setImporting({ active: false, progress: 0, total: 0 }), 1000);
     } catch (err) {
       console.error(err);
-      alert('Import failed.');
+      alert('Import failed. Please check file format.');
       setImporting({ active: false, progress: 0, total: 0 });
     }
   };
@@ -92,10 +93,28 @@ const Inventory: React.FC = () => {
     }
   };
 
+  const handleUpdateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct || !editingProduct.id) return;
+    try {
+      await db.products.update(editingProduct.id, editingProduct);
+      setIsEditModalOpen(false);
+      setEditingProduct(null);
+      performSearch(searchTerm);
+    } catch (err) {
+      alert('Error updating product.');
+    }
+  };
+
   const deleteProduct = async (id?: number) => {
-    if (!id || !confirm('Remove SKU?')) return;
+    if (!id || !confirm('Remove SKU from registry?')) return;
     await db.products.delete(id);
     performSearch(searchTerm);
+  };
+
+  const openEditModal = (product: Product) => {
+    setEditingProduct({ ...product });
+    setIsEditModalOpen(true);
   };
 
   return (
@@ -124,7 +143,7 @@ const Inventory: React.FC = () => {
       {/* Manual Add Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-2xl font-black tracking-tight">Add New SKU</h3>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
@@ -144,7 +163,7 @@ const Inventory: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Exp</label>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Exp (MM/YY)</label>
                   <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="MM/YY" value={newProduct.expiry} onChange={e => setNewProduct({...newProduct, expiry: e.target.value})} />
                 </div>
                 <div>
@@ -152,8 +171,67 @@ const Inventory: React.FC = () => {
                   <input required type="number" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={newProduct.stock} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} />
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Purchase Rate</label>
+                  <input required type="number" step="0.01" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={newProduct.purchaseRate} onChange={e => setNewProduct({...newProduct, purchaseRate: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Sale Rate</label>
+                  <input required type="number" step="0.01" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={newProduct.saleRate} onChange={e => setNewProduct({...newProduct, saleRate: parseFloat(e.target.value) || 0})} />
+                </div>
+              </div>
               <div className="col-span-full pt-4">
                 <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-3xl font-black shadow-xl shadow-blue-500/20 hover:bg-blue-700 transition-all">SAVE MEDICINE</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {isEditModalOpen && editingProduct && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl p-8 rounded-[40px] shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-black tracking-tight">Edit SKU Details</h3>
+              <button onClick={() => { setIsEditModalOpen(false); setEditingProduct(null); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={24} /></button>
+            </div>
+            <form onSubmit={handleUpdateProduct} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="col-span-full">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Medicine Name</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold" value={editingProduct.name} onChange={e => setEditingProduct({...editingProduct, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Manufacturer</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={editingProduct.manufacturer} onChange={e => setEditingProduct({...editingProduct, manufacturer: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Batch</label>
+                <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={editingProduct.batch} onChange={e => setEditingProduct({...editingProduct, batch: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Exp</label>
+                  <input required type="text" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="MM/YY" value={editingProduct.expiry} onChange={e => setEditingProduct({...editingProduct, expiry: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Stock</label>
+                  <input required type="number" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={editingProduct.stock} onChange={e => setEditingProduct({...editingProduct, stock: parseInt(e.target.value) || 0})} />
+                </div>
+              </div>
+               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">MRP</label>
+                  <input required type="number" step="0.01" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={editingProduct.mrp} onChange={e => setEditingProduct({...editingProduct, mrp: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Sale Rate</label>
+                  <input required type="number" step="0.01" className="w-full px-5 py-3 bg-slate-50 dark:bg-slate-800 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none" value={editingProduct.saleRate} onChange={e => setEditingProduct({...editingProduct, saleRate: parseFloat(e.target.value) || 0})} />
+                </div>
+              </div>
+              <div className="col-span-full pt-4">
+                <button type="submit" className="w-full py-4 bg-emerald-600 text-white rounded-3xl font-black shadow-xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all">UPDATE REGISTRY</button>
               </div>
             </form>
           </div>
@@ -230,7 +308,7 @@ const Inventory: React.FC = () => {
                   </td>
                   <td className="p-6">
                     <div className="flex items-center justify-center gap-1">
-                      <button className="p-3 text-slate-300 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"><Edit3 size={18}/></button>
+                      <button onClick={() => openEditModal(p)} className="p-3 text-slate-300 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"><Edit3 size={18}/></button>
                       <button onClick={() => deleteProduct(p.id)} className="p-3 text-slate-300 hover:text-rose-500 rounded-xl hover:bg-rose-50 transition-all"><Trash2 size={18}/></button>
                     </div>
                   </td>
